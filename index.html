@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>VONALKÓDOLVASÓ</title>
+    <link rel="icon" type="image/png" href="logo.png">
+    
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; text-align: center; background: #f4f4f4; margin: 0; padding: 10px; }
+        
+        h2 { color: #333; margin: 5px 0 10px 0; font-size: 1.2rem; }
+
+        /* KAMERA */
+        #reader {
+            width: 100%;
+            max-width: 500px;
+            height: 250px;
+            margin: 0 auto 10px auto;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #000;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            position: relative;
+        }
+        #reader video { object-fit: cover; width: 100%; height: 100%; }
+
+        /* VEZÉRLŐK */
+        .controls { 
+            background: white; padding: 10px; border-radius: 10px; 
+            max-width: 500px; margin: 0 auto 15px auto; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .manual-input-group { display: flex; gap: 5px; margin-bottom: 10px; }
+        .manual-input-group input { flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; }
+        
+        button { padding: 10px; border: none; border-radius: 5px; cursor: pointer; color: white; font-weight: bold; font-size: 14px; }
+        .btn-add { background-color: #2a9d8f; }
+        
+        /* FŐ VEZÉRLŐ GOMBOK */
+        .btn-group { display: flex; gap: 8px; margin-top: 10px; justify-content: space-between; }
+        
+        .btn-group button { 
+            flex: 1; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            font-size: 24px; 
+            padding: 12px 0;
+        }
+
+        #clear-btn { background-color: #e76f51; }
+        #export-btn { background-color: #264653; }
+        #torch-btn { background-color: #e9c46a; color: #333; display: none; }
+        #cam-restart-btn { background-color: #457b9d; }
+
+        /* Zoom */
+        #zoom-container { display: none; width: 95%; margin: 0 auto 10px auto; }
+        input[type=range] { width: 100%; }
+
+        /* Tömeges mód */
+        .bulk-toggle-container {
+            display: flex; align-items: center; justify-content: center;
+            padding: 8px; background: #eee; border-radius: 8px; margin-bottom: 5px;
+        }
+        .bulk-toggle-container input { margin-right: 10px; transform: scale(1.3); }
+        .bulk-active { background-color: #ffe8d6; border: 1px solid #e76f51; color: #e76f51; }
+
+        /* --- UNIVERZÁLIS MODAL (Ablak) --- */
+        #overlay {
+            display: none;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); z-index: 9999;
+            align-items: center; justify-content: center;
+        }
+        .modal-box {
+            background: white; padding: 20px; border-radius: 10px; width: 85%; max-width: 320px; text-align: center;
+        }
+        .modal-title { font-size: 18px; font-weight: bold; margin-bottom: 15px; color: #333; }
+        .modal-btns { display: flex; gap: 10px; justify-content: center; margin-top: 15px; }
+        .modal-btns button { flex: 1; }
+
+        #modal-qty-input { font-size: 20px; padding: 10px; width: 80px; text-align: center; margin: 10px 0; display: none; border: 2px solid #2a9d8f; border-radius: 5px; }
+
+        /* TÁBLÁZAT */
+        .table-container { width: 100%; max-width: 600px; margin: 0 auto; overflow-x: auto; background: white; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; vertical-align: middle; }
+        th { background-color: #2a9d8f; color: white; font-size: 0.8rem; }
+        
+        .highlight { background-color: #d4edda !important; }
+        
+        /* Oszlop formázások */
+        .qty-col { font-weight: bold; text-align: center; width: 40px; }
+        .action-col { text-align: right; white-space: nowrap; }
+
+        /* MŰVELETI GOMBOK (MODERN KEREK) */
+        .btn-mini { 
+            width: 32px; 
+            height: 32px; 
+            border-radius: 50%; /* Kerek gomb */
+            border: none;
+            color: white; /* Ez a fontos a fehér ikonhoz */
+            font-size: 20px; /* Nagyobb méret a sima +/- jeleknek */
+            font-weight: bold; /* Félkövér */
+            margin-left: 4px;
+            cursor: pointer;
+            display: inline-flex;
+            justify-content: center;
+            align-items: center;
+            padding: 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: transform 0.1s;
+            line-height: 1; /* Fontos a vertikális középre igazításhoz */
+        }
+        .btn-mini:active { transform: scale(0.9); }
+
+        .btn-minus { background-color: #2a9d8f; } /* 2a9d8f */
+        .btn-plus { background-color: #d62828; }  /* Zöld */
+        .btn-delete { background-color: #6c757d; } /* Piros */
+    </style>
+</head>
+<body>
+
+    <h2>VONALKÓDOLVASÓ</h2>
+    
+    <div id="reader"></div>
+
+    <div class="controls">
+        <div class="manual-input-group">
+            <input type="number" id="manual-input" placeholder="Kézi kód..." onkeydown="checkEnter(event)">
+            <button class="btn-add" onclick="addManualCode()">OK</button>
+        </div>
+
+        <div id="zoom-container">
+            <label>🔍 Zoom:</label>
+            <input type="range" id="zoom-slider" min="1" max="5" step="0.1" value="1" oninput="applyZoom(this.value)">
+        </div>
+
+        <div class="bulk-toggle-container" id="bulk-box">
+            <input type="checkbox" id="bulk-mode" onchange="toggleBulkUI()">
+            <label for="bulk-mode">Tömeges mód (Mennyiség kérése)</label>
+        </div>
+
+        <div class="btn-group">
+            <button id="cam-restart-btn" onclick="playClick(); restartCamera()">📷</button>
+            <button id="torch-btn" onclick="playClick(); toggleTorch()">🔦</button>
+            <button id="clear-btn" onclick="playClick(); askClearAll()">🗑️</button>
+            <button id="export-btn" onclick="playClick(); exportToExcel()">💾</button>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table id="inventory-table">
+            <thead>
+                <tr>
+                    <th>Kód</th>
+                    <th class="qty-col">Db</th>
+                    <th class="action-col">Művelet</th> 
+                </tr>
+            </thead>
+            <tbody id="table-body"></tbody>
+        </table>
+    </div>
+
+    <div id="overlay">
+        <div class="modal-box">
+            <div id="modal-text" class="modal-title">Üzenet</div>
+            <input type="number" id="modal-qty-input" value="1" min="1">
+            <div class="modal-btns">
+                <button onclick="playClick(); closeModal(false)" style="background:#666;">Mégse</button>
+                <button id="modal-confirm-btn" onclick="playClick(); closeModal(true)" style="background:#2a9d8f;">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let html5QrCode;
+        let isTorchOn = false;
+        let videoTrack; 
+        let inventoryData = {}; 
+        let audioCtx;
+        let isScanningPaused = false;
+        
+        let currentAction = null; 
+        let tempCode = "";
+
+        // --- ADATMENTÉS ÉS BETÖLTÉS (Local Storage) ---
+        function saveData() {
+            localStorage.setItem("leltar_adatok", JSON.stringify(inventoryData));
+        }
+
+        function loadData() {
+            const saved = localStorage.getItem("leltar_adatok");
+            if (saved) {
+                try {
+                    inventoryData = JSON.parse(saved);
+                    updateTable(null);
+                } catch (e) {
+                    console.error("Hiba az adatok betöltésekor", e);
+                }
+            }
+
+            const savedBulk = localStorage.getItem("leltar_bulk_mode");
+            if (savedBulk === "true") {
+                document.getElementById("bulk-mode").checked = true;
+                toggleBulkUI(); 
+            }
+        }
+
+        // --- HANGOK ---
+         function playBeep() {
+
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            const osc = audioCtx.createOscillator();
+
+            const gain = audioCtx.createGain();
+
+            osc.connect(gain); gain.connect(audioCtx.destination);
+
+            osc.type = 'square'; osc.frequency.value = 800; gain.gain.value = 0.1;
+
+            osc.start(); setTimeout(() => osc.stop(), 150);
+
+        }
+
+
+
+        function playClick() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.type = 'sine'; 
+            osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.05); 
+        }
+
+        function playTorchSound() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.type = 'triangle'; 
+            osc.frequency.setValueAtTime(2000, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.05); 
+        }
+
+        document.body.addEventListener('click', () => { if (!audioCtx) playClick(); }, { once: true });
+
+        // --- KAMERA KEZELÉS ---
+        function startScanner() {
+            if (html5QrCode) {
+                html5QrCode.stop().then(() => {
+                    initCamera();
+                }).catch(() => {
+                    initCamera();
+                });
+            } else {
+                initCamera();
+            }
+        }
+
+        function initCamera() {
+            html5QrCode = new Html5Qrcode("reader");
+            const config = { 
+                fps: 10, 
+                qrbox: { width: 250, height: 150 },
+                aspectRatio: 1.77,
+                videoConstraints: {
+                    facingMode: "environment",
+                    width: { min: 640, ideal: 1280, max: 1920 },
+                    focusMode: "continuous"
+                }
+            };
+            html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess)
+            .then(() => { setupCameraControls(); })
+            .catch(err => { 
+                console.log("Kamera hiba: ", err);
+                alert("Nem sikerült elindítani a kamerát. Kérlek engedélyezd a hozzáférést, vagy nyomd meg a 'Kamera' gombot.");
+            });
+        }
+
+        function restartCamera() {
+            startScanner();
+        }
+
+        function onScanSuccess(decodedText) {
+            if (isScanningPaused) return;
+
+            const code = decodedText.trim();
+            if(code === "") return;
+
+            isScanningPaused = true; 
+            playBeep();
+
+            const isBulk = document.getElementById("bulk-mode").checked;
+
+            if (isBulk) {
+                openModal('bulk-add', code);
+            } else {
+                addQuantity(code, 1);
+                setTimeout(() => { isScanningPaused = false; }, 3000); 
+            }
+        }
+
+        // --- MODAL KEZELÉS ---
+        function openModal(action, code = "") {
+            const overlay = document.getElementById("overlay");
+            const title = document.getElementById("modal-text");
+            const input = document.getElementById("modal-qty-input");
+            const okBtn = document.getElementById("modal-confirm-btn");
+            
+            currentAction = action;
+            tempCode = code;
+            
+            overlay.style.display = "flex";
+            input.style.display = "none"; 
+            okBtn.style.background = "#2a9d8f"; 
+
+            if (action === 'bulk-add') {
+                title.innerHTML = `Kód: <b>${code}</b><br>Mennyiség?`;
+                input.style.display = "block";
+                input.value = 1;
+                input.focus();
+            } 
+            else if (action === 'delete-one') {
+                title.innerHTML = `Biztosan törlöd ezt?<br><b>${code}</b>`;
+                okBtn.style.background = "#d62828"; 
+            }
+            else if (action === 'clear-all') {
+                title.innerHTML = `Minden adat törlése?<br>Ez nem vonható vissza!`;
+                okBtn.style.background = "#d62828"; 
+            }
+        }
+
+        function closeModal(isConfirmed) {
+            const overlay = document.getElementById("overlay");
+            const input = document.getElementById("modal-qty-input");
+            
+            overlay.style.display = "none";
+
+            if (isConfirmed) {
+                if (currentAction === 'bulk-add') {
+                    const qty = parseInt(input.value);
+                    if (!isNaN(qty) && qty > 0) addQuantity(tempCode, qty);
+                }
+                else if (currentAction === 'delete-one') {
+                    performDeleteRow(tempCode);
+                }
+                else if (currentAction === 'clear-all') {
+                    performClearAll();
+                }
+            }
+
+            setTimeout(() => { isScanningPaused = false; }, 1000);
+        }
+
+        // --- ADATKEZELÉS ---
+        function addQuantity(code, amount) {
+            if (inventoryData[code]) inventoryData[code] += amount;
+            else inventoryData[code] = amount;
+            updateTable(code);
+            saveData(); 
+        }
+
+        function modifyQty(code, change) {
+            if (inventoryData[code]) {
+                inventoryData[code] += change;
+                if (inventoryData[code] <= 0) {
+                    askDeleteRow(code);
+                } else {
+                    updateTable(null);
+                    saveData(); 
+                }
+            }
+        }
+
+        function askDeleteRow(code) {
+            isScanningPaused = true; 
+            openModal('delete-one', code);
+        }
+        
+        function performDeleteRow(code) {
+            delete inventoryData[code];
+            updateTable(null);
+            saveData(); 
+        }
+
+        function askClearAll() {
+            isScanningPaused = true;
+            openModal('clear-all');
+        }
+
+        function performClearAll() {
+            inventoryData = {};
+            updateTable();
+            saveData(); 
+        }
+
+        function updateTable(highlightCode) {
+            const tbody = document.getElementById("table-body");
+            tbody.innerHTML = ""; 
+            Object.keys(inventoryData).reverse().forEach(code => {
+                const qty = inventoryData[code];
+                const row = document.createElement("tr");
+                if (code === highlightCode) {
+                    row.classList.add("highlight");
+                    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+                
+                // MŰVELETI GOMBOK (ICONS)
+                row.innerHTML = `
+                    <td>${code}</td><td class="qty-col">${qty}</td>
+                    <td style="text-align:right; white-space:nowrap;">
+                        <button class="btn-mini btn-minus" onclick="playTorchSound(); modifyQty('${code}', -1)">-</button>
+                        <button class="btn-mini btn-plus" onclick="playTorchSound(); modifyQty('${code}', 1)">+</button>
+                        <button class="btn-mini btn-delete" onclick="playTorchSound(); askDeleteRow('${code}')">🗑️</button>
+                    </td>`;
+                tbody.appendChild(row); 
+            });
+        }
+
+        // --- EGYÉB FUNKCIÓK ---
+        function addManualCode() {
+            const input = document.getElementById("manual-input");
+            const code = input.value.trim();
+            if (code) {
+                isScanningPaused = true; 
+                playBeep(); // Beolvasás hang
+                if (document.getElementById("bulk-mode").checked) openModal('bulk-add', code);
+                else { addQuantity(code, 1); setTimeout(() => { isScanningPaused = false; }, 1000); }
+                input.value = "";
+            }
+        }
+
+        function checkEnter(e) { if (e.key === "Enter") addManualCode(); }
+        
+        function toggleBulkUI() { 
+            const chk = document.getElementById("bulk-mode");
+            const box = document.getElementById("bulk-box"); 
+            chk.checked ? box.classList.add("bulk-active") : box.classList.remove("bulk-active");
+            
+            localStorage.setItem("leltar_bulk_mode", chk.checked);
+        }
+
+        function exportToExcel() {
+            if (Object.keys(inventoryData).length === 0) {
+                alert("Nincs mit kimenteni!");
+                return;
+            }
+            const dataToExport = Object.keys(inventoryData).map(code => ({
+                "Vonalkód": code,
+                "Darabszám": inventoryData[code]
+            }));
+            const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Leltár");
+            XLSX.writeFile(workbook, "leltar.xlsx");
+        }
+
+        // --- KAMERA EXTRÁK (ZOOM MENTÉSSEL) ---
+        function setupCameraControls() {
+            setTimeout(() => {
+                const videoElement = document.querySelector("#reader video");
+                if (videoElement && videoElement.srcObject) {
+                    const stream = videoElement.srcObject;
+                    videoTrack = stream.getVideoTracks()[0];
+                    const caps = videoTrack.getCapabilities();
+                    const settings = videoTrack.getSettings();
+                    
+                    if (caps.zoom) {
+                        document.getElementById("zoom-container").style.display = "block";
+                        const zs = document.getElementById("zoom-slider");
+                        zs.min = caps.zoom.min; zs.max = caps.zoom.max; zs.step = caps.zoom.step; 
+                        
+                        let savedZoom = parseFloat(localStorage.getItem("leltar_zoom"));
+                        if (!savedZoom || savedZoom < caps.zoom.min || savedZoom > caps.zoom.max) {
+                            savedZoom = settings.zoom || 1; 
+                        }
+                        zs.value = savedZoom;
+                        applyZoom(savedZoom); 
+                    }
+
+                    if (caps.torch) document.getElementById("torch-btn").style.display = "inline-block";
+                }
+            }, 500);
+        }
+
+        function applyZoom(val) { 
+            if (videoTrack) {
+                const zoomVal = parseFloat(val);
+                videoTrack.applyConstraints({ advanced: [{ zoom: zoomVal }] })
+                .then(() => {
+                    localStorage.setItem("leltar_zoom", zoomVal);
+                })
+                .catch(e=>{}); 
+            } 
+        }
+
+        function toggleTorch() { if (videoTrack) { isTorchOn = !isTorchOn; videoTrack.applyConstraints({ advanced: [{ torch: isTorchOn }] }).catch(e=>{}); } }
+
+        // INDÍTÁS
+        window.onload = function() {
+            loadData(); 
+            startScanner(); 
+        };
+    </script>
+</body>
+</html>
