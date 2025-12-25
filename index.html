@@ -3,135 +3,143 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TERMÉK KERESŐ</title>
+    <title>SzVG Leltár & Kereső</title>
     
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     
     <style>
-        body { font-family: 'Segoe UI', sans-serif; text-align: center; background: #f0f2f5; margin: 0; padding: 10px; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: #f4f6f8; margin: 0; padding: 10px; color: #333; }
         
-        h2 { color: #333; margin: 5px 0 15px 0; font-size: 1.4rem; }
+        h2 { color: #2c3e50; margin: 10px 0 20px 0; font-size: 1.5rem; text-transform: uppercase; letter-spacing: 1px; }
 
-        /* KAMERA KERET */
+        /* KAMERA DOBOZ */
         #reader {
             width: 100%;
-            max-width: 500px;
-            height: 250px;
+            max-width: 600px;
+            height: 300px;
             margin: 0 auto 15px auto;
-            border-radius: 12px;
+            border-radius: 15px;
             overflow: hidden;
             background: #000;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
             position: relative;
+            border: 4px solid #fff;
         }
         #reader video { object-fit: cover; width: 100%; height: 100%; }
 
         /* VEZÉRLŐK */
         .controls { 
-            background: white; padding: 15px; border-radius: 12px; 
-            max-width: 500px; margin: 0 auto 20px auto; 
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            background: white; padding: 20px; border-radius: 15px; 
+            max-width: 600px; margin: 0 auto 20px auto; 
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
         }
 
-        .input-group { display: flex; gap: 8px; margin-bottom: 15px; }
+        .input-group { display: flex; gap: 10px; margin-bottom: 15px; }
         .input-group input { 
-            flex: 1; padding: 12px; border: 1px solid #ddd; 
-            border-radius: 8px; font-size: 16px; outline: none;
+            flex: 1; padding: 15px; border: 2px solid #e0e0e0; 
+            border-radius: 10px; font-size: 18px; outline: none; transition: 0.3s;
         }
-        .input-group input:focus { border-color: #2a9d8f; }
+        .input-group input:focus { border-color: #3498db; }
         
         button { 
-            padding: 12px 20px; border: none; border-radius: 8px; 
+            padding: 15px 25px; border: none; border-radius: 10px; 
             cursor: pointer; color: white; font-weight: bold; font-size: 16px; 
-            transition: opacity 0.2s;
+            transition: all 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
-        button:active { opacity: 0.8; }
-        .btn-search { background-color: #2a9d8f; }
-        .btn-restart { background-color: #457b9d; width: 100%; margin-top: 10px; }
-
-        /* TERMÉK KÁRTYA (EREDMÉNY) */
-        #product-card {
-            display: none; /* Alapból rejtve */
-            background: white;
-            max-width: 500px;
-            margin: 0 auto;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-            padding: 20px;
-            text-align: left;
-            border-top: 5px solid #2a9d8f;
-        }
-
-        .card-header { margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-        .product-name { font-size: 1.3rem; font-weight: bold; color: #333; line-height: 1.3; }
-        .product-sku { color: #666; font-size: 0.9rem; margin-top: 5px; }
-
-        .card-body { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        button:active { transform: translateY(2px); box-shadow: none; }
         
-        .data-box { background: #f8f9fa; padding: 10px; border-radius: 8px; text-align: center; }
-        .data-label { font-size: 0.8rem; color: #666; text-transform: uppercase; letter-spacing: 1px; }
-        .data-value { font-size: 1.2rem; font-weight: bold; color: #333; margin-top: 5px; }
+        .btn-search { background-color: #3498db; } /* Kék */
+        .btn-restart { background-color: #95a5a6; width: 100%; margin-top: 10px; } /* Szürke */
 
-        .stock-value { color: #2a9d8f; } /* Zöld */
-        .stock-value.low { color: #e76f51; } /* Piros ha kevés */
+        /* EREDMÉNY KÁRTYA DESIGN */
+        #product-card {
+            display: none;
+            background: white;
+            max-width: 600px;
+            margin: 0 auto 50px auto;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.15);
+            overflow: hidden;
+            text-align: left;
+            animation: slideIn 0.3s ease-out;
+        }
 
-        .price-section { grid-column: span 2; display: flex; justify-content: space-between; background: #e9ecef; padding: 15px; border-radius: 8px; margin-top: 5px; }
-        .price-box { text-align: center; }
-        .price-large { font-size: 1.4rem; color: #264653; font-weight: 800; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* LOADING */
-        #loading { display: none; margin-top: 20px; color: #666; }
-        .spinner { display: inline-block; width: 20px; height: 20px; border: 3px solid rgba(0,0,0,0.1); border-radius: 50%; border-top-color: #2a9d8f; animation: spin 1s ease-in-out infinite; vertical-align: middle; margin-right: 10px; }
+        .card-header { 
+            background: #2c3e50; color: white; padding: 20px; 
+            border-bottom: 4px solid #e67e22; /* Narancs csík */
+        }
+        .product-name { font-size: 1.4rem; font-weight: bold; line-height: 1.4; margin-bottom: 5px; }
+        .product-sku { opacity: 0.8; font-size: 0.9rem; }
+
+        .card-body { padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+
+        .info-block { background: #f8f9fa; padding: 15px; border-radius: 10px; text-align: center; }
+        .info-label { font-size: 0.75rem; text-transform: uppercase; color: #7f8c8d; font-weight: bold; letter-spacing: 1px; margin-bottom: 5px; }
+        .info-value { font-size: 1.5rem; font-weight: 800; color: #2c3e50; }
+
+        .stock-ok { color: #27ae60; } /* Zöld */
+        .stock-low { color: #e74c3c; } /* Piros */
+
+        .price-section { 
+            grid-column: span 2; display: flex; justify-content: space-between; 
+            background: #ecf0f1; padding: 15px; border-radius: 10px; margin-top: 5px; 
+        }
+        .price-large { color: #e67e22; font-size: 1.6rem; }
+
+        /* LOADING & ERROR */
+        #loading { display: none; margin: 20px; font-weight: bold; color: #3498db; }
+        .spinner { display: inline-block; width: 25px; height: 25px; border: 4px solid rgba(0,0,0,0.1); border-radius: 50%; border-top-color: #3498db; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 10px; }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* HIBA ÜZENET */
-        #error-msg { display: none; background: #ffe8d6; color: #c0392b; padding: 15px; border-radius: 8px; margin-top: 15px; font-weight: bold; border: 1px solid #e76f51; }
+        #error-msg { display: none; background: #fadbd8; color: #c0392b; padding: 15px; border-radius: 10px; margin: 15px auto; max-width: 600px; border: 1px solid #e74c3c; font-weight: bold; }
 
     </style>
 </head>
 <body>
 
-    <h2>TERMÉK ELLENŐRZŐ</h2>
+    <h2>SzVG Tools Admin Kereső</h2>
     
     <div id="reader"></div>
 
     <div class="controls">
         <div class="input-group">
-            <input type="number" id="manual-input" placeholder="Vonalkód..." onkeydown="checkEnter(event)">
+            <input type="number" id="manual-input" placeholder="Vonalkód beírása..." onkeydown="checkEnter(event)">
             <button class="btn-search" onclick="handleManualSearch()">KERESÉS</button>
         </div>
         <button class="btn-restart" onclick="startScanner()">📷 Kamera Újraindítása</button>
     </div>
 
-    <div id="loading"><div class="spinner"></div>Adatok lekérése az adminból...</div>
-
+    <div id="loading"><div class="spinner"></div>Adatok lekérése az admin felületről...</div>
     <div id="error-msg"></div>
 
     <div id="product-card">
         <div class="card-header">
             <div class="product-name" id="disp-name">Termék Neve</div>
-            <div class="product-sku">Cikkszám: <span id="disp-sku">-</span></div>
-            <div class="product-sku">Vonalkód: <span id="disp-barcode">-</span></div>
+            <div class="product-sku">
+                Cikkszám: <span id="disp-sku">-</span> | Vonalkód: <span id="disp-barcode">-</span>
+            </div>
         </div>
 
         <div class="card-body">
-            <div class="data-box">
-                <div class="data-label">Készlet</div>
-                <div class="data-value stock-value" id="disp-stock">0 db</div>
+            <div class="info-block">
+                <div class="info-label">Raktárkészlet</div>
+                <div class="info-value" id="disp-stock">0 db</div>
             </div>
-            <div class="data-box">
-                <div class="data-label">Egység</div>
-                <div class="data-value" id="disp-unit">db</div>
+            <div class="info-block">
+                <div class="info-label">Mértékegység</div>
+                <div class="info-value" id="disp-unit">pár</div>
             </div>
 
             <div class="price-section">
-                <div class="price-box">
-                    <div class="data-label">Nettó Ár</div>
-                    <div class="data-value" id="disp-netto">0 Ft</div>
+                <div style="text-align: center;">
+                    <div class="info-label">Nettó Ár</div>
+                    <div class="info-value" style="font-size:1.2rem;" id="disp-netto">0</div>
                 </div>
-                <div class="price-box">
-                    <div class="data-label">Bruttó Ár</div>
-                    <div class="price-large" id="disp-brutto">0 Ft</div>
+                <div style="text-align: center;">
+                    <div class="info-label">Bruttó Ár</div>
+                    <div class="info-value price-large" id="disp-brutto">0</div>
                 </div>
             </div>
         </div>
@@ -142,7 +150,7 @@
         let isScanningPaused = false;
         let audioCtx;
 
-        // --- HANGOK ---
+        // --- HANG LEJÁTSZÁS (Beep) ---
         function playBeep() {
             if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -153,7 +161,7 @@
             osc.start(); setTimeout(() => osc.stop(), 150);
         }
 
-        // --- KAMERA ---
+        // --- KAMERA INDÍTÁSA ---
         function startScanner() {
             document.getElementById("error-msg").style.display = "none";
             isScanningPaused = false;
@@ -167,11 +175,13 @@
 
         function initCamera() {
             html5QrCode = new Html5Qrcode("reader");
-            const config = { fps: 10, qrbox: { width: 250, height: 150 }, aspectRatio: 1.77 };
+            const config = { fps: 10, qrbox: { width: 250, height: 150 }, aspectRatio: 1.0 };
+            
+            // "environment" jelenti a hátsó kamerát
             html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess)
             .catch(err => { 
                 console.log("Kamera hiba: ", err); 
-                showError("Nem sikerült elindítani a kamerát. Használd a kézi bevitelt.");
+                showError("Kamera hiba! Próbáld meg a kézi bevitelt.");
             });
         }
 
@@ -183,14 +193,14 @@
             isScanningPaused = true; 
             playBeep();
             
-            // Keresés indítása
+            // Beírjuk a mezőbe és indítjuk a keresést
             document.getElementById("manual-input").value = code;
             fetchProductFromAdmin(code);
         }
 
-        // --- ADMIN LEKÉRDEZÉS LOGIKA ---
+        // --- ADMIN ADATLEKÉRÉS (Lényegi rész) ---
         async function fetchProductFromAdmin(barcode) {
-            // UI Reset
+            // Felület alaphelyzetbe állítása
             const card = document.getElementById("product-card");
             const loading = document.getElementById("loading");
             const errorDiv = document.getElementById("error-msg");
@@ -200,93 +210,102 @@
             loading.style.display = "block";
 
             try {
-                // 1. URL Összeállítása (Keresés)
+                // 1. Keresés URL összeállítása
                 const searchUrl = `https://szvgtoolsshop.hu/administrator/index.php?view=products_all&search=${barcode}`;
                 
-                // Keresés kérése
+                // Fetch kérés (CORS bővítmény szükséges hozzá!)
                 const response = await fetch(searchUrl);
-                if (!response.ok) throw new Error("Nem sikerült elérni az admint. Jelentkezz be!");
+                
+                // Ellenőrizzük, hogy sikerült-e a kapcsolat
+                // Ha átirányít a login oldalra, akkor nem vagy bejelentkezve
+                if (response.url.includes("login")) {
+                    throw new Error("Nem vagy bejelentkezve az adminba! Nyisd meg a szvgtoolsshop.hu/administrator oldalt egy másik fülön.");
+                }
+                if (!response.ok) throw new Error("Hálózati hiba. Ellenőrizd az internetkapcsolatot.");
 
                 const text = await response.text();
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(text, "text/html");
 
-                // 2. Termék linkjének keresése az eredményben
+                // 2. Link megkeresése az eredményoldalon
+                // A te rendszeredben a link: index.php?view=product&id=...
                 const linkElement = doc.querySelector('a[href*="view=product&id="]');
+                
                 if (!linkElement) {
-                    throw new Error("Nincs találat erre a kódra az adminban.");
+                    throw new Error("Nincs találat az adminban erre a kódra: " + barcode);
                 }
 
                 const productLink = "https://szvgtoolsshop.hu/administrator/" + linkElement.getAttribute('href');
 
-                // 3. Termék adatlap letöltése
+                // 3. Konkrét termék adatlap letöltése
                 const prodResponse = await fetch(productLink);
                 const prodText = await prodResponse.text();
                 const prodDoc = parser.parseFromString(prodText, "text/html");
 
                 // 4. ADATOK KINYERÉSE (A megadott ID-k alapján)
                 
-                // NÉV: A label[for="name"] utáni DIV elemből
+                // NÉV: A label[for="name"] melletti DIV
                 let nameLabel = prodDoc.querySelector('label[for="name"]');
-                let name = "Nincs név";
+                let name = "Nincs megnevezés";
                 if(nameLabel && nameLabel.nextElementSibling) {
                     name = nameLabel.nextElementSibling.innerText.trim();
                 }
 
                 // Cikkszám
                 let skuElem = prodDoc.getElementById('sku');
-                let sku = skuElem ? skuElem.value : "";
+                let sku = skuElem ? skuElem.value : "-";
 
-                // Készlet (Összes raktár) - .total_all osztály
+                // Készlet: .total_all osztályú elem
                 let stockElem = prodDoc.querySelector('.total_all');
                 let stock = stockElem ? stockElem.innerText.trim() : "0";
 
-                // Árak (Input mezők értékei)
+                // Árak: netto és brutto ID
                 let netElem = prodDoc.getElementById('netto');
                 let grossElem = prodDoc.getElementById('brutto');
                 let net = netElem ? netElem.value : "0";
                 let gross = grossElem ? grossElem.value : "0";
                 
-                // Egység (Label unit utáni div)
+                // Egység: label[for="unit"] melletti DIV
                 let unitLabel = prodDoc.querySelector('label[for="unit"]');
                 let unit = "db";
                 if(unitLabel && unitLabel.nextElementSibling) {
                     unit = unitLabel.nextElementSibling.innerText.trim();
                 }
 
-                // 5. MEGJELENÍTÉS
+                // 5. Eredmény megjelenítése
                 displayResult(name, sku, barcode, stock, net, gross, unit);
 
             } catch (err) {
                 console.error(err);
-                showError(err.message + "<br><small>(Ellenőrizd: Be vagy jelentkezve? Van CORS bővítményed?)</small>");
+                // Barátságos hibaüzenet
+                let msg = err.message;
+                if (msg.includes("Failed to fetch")) {
+                    msg = "CORS Hiba! Kapcsold be a 'CORS Unblock' bővítményt a böngészőben.";
+                }
+                showError(msg);
             } finally {
                 loading.style.display = "none";
-                // Rövid szünet után újra szkennelhet, ha nem talált semmit, 
-                // de ha talált, hagyjuk olvasni az eredményt.
             }
         }
 
         function displayResult(name, sku, barcode, stock, net, gross, unit) {
+            // Szövegek beírása
             document.getElementById("disp-name").innerText = name;
             document.getElementById("disp-sku").innerText = sku;
             document.getElementById("disp-barcode").innerText = barcode;
             
             const stockEl = document.getElementById("disp-stock");
-            stockEl.innerText = stock + " " + unit;
+            stockEl.innerText = stock;
             document.getElementById("disp-unit").innerText = unit;
 
-            // Színváltás készlet alapján
+            // Színváltás (ha készlet <= 0 akkor piros)
             let stockNum = parseFloat(stock.replace(',', '.').replace(/\s/g, ''));
-            if(stockNum <= 0) {
-                stockEl.style.color = "#e76f51"; // Piros
-            } else {
-                stockEl.style.color = "#2a9d8f"; // Zöld
-            }
+            stockEl.className = "info-value " + (stockNum > 0 ? "stock-ok" : "stock-low");
 
             document.getElementById("disp-netto").innerText = net + " Ft";
             document.getElementById("disp-brutto").innerText = gross + " Ft";
 
+            // Kártya megjelenítése
             document.getElementById("product-card").style.display = "block";
         }
 
@@ -307,7 +326,7 @@
 
         function checkEnter(e) { if (e.key === "Enter") handleManualSearch(); }
 
-        // Indítás
+        // Indításkor kamera start
         window.onload = startScanner;
 
     </script>
