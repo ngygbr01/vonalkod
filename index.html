@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SzVG Admin Kereső</title>
+    <title>SzVG Admin Szerkesztő</title>
     
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     
@@ -13,11 +13,11 @@
         
         h2 { color: #2c3e50; margin: 10px 0 15px 0; font-size: 1.5rem; text-transform: uppercase; letter-spacing: 1px; }
 
-        /* KAMERA KERET (EZT JAVÍTOTTAM) */
+        /* KAMERA KERET */
         #reader {
             width: 100%;
             max-width: 600px;
-            height: 300px; /* Fix magasság, hogy ne ugráljon */
+            height: 300px;
             margin: 0 auto 15px auto;
             border-radius: 12px;
             overflow: hidden;
@@ -26,13 +26,7 @@
             position: relative;
             border: 4px solid #fff;
         }
-        
-        /* Ez biztosítja, hogy a videó kitöltse a keretet */
-        #reader video { 
-            object-fit: cover; 
-            width: 100%; 
-            height: 100%; 
-        }
+        #reader video { object-fit: cover; width: 100%; height: 100%; }
 
         /* VEZÉRLŐK */
         .controls { 
@@ -82,10 +76,28 @@
 
         .card-header { 
             background: #2c3e50; color: white; padding: 15px 20px; 
-            border-bottom: 4px solid #e67e22; /* A kért narancs csík */
+            border-bottom: 4px solid #e67e22; 
         }
-        .product-name { font-size: 1.3rem; font-weight: bold; margin-bottom: 5px; line-height: 1.3; }
-        .product-sku { opacity: 0.8; font-size: 0.9rem; }
+        
+        /* SZERKESZTHETŐ NÉV STÍLUSA */
+        .name-label { color: #bdc3c7; font-size: 0.8rem; text-transform: uppercase; margin-bottom: 2px;}
+        .product-name-input { 
+            width: 100%;
+            background: transparent;
+            border: none;
+            border-bottom: 1px solid #7f8c8d;
+            color: white;
+            font-size: 1.3rem; 
+            font-weight: bold; 
+            font-family: inherit;
+            margin-bottom: 5px; 
+            padding: 5px 0;
+            resize: none; /* Ne lehessen átméretezni */
+            outline: none;
+        }
+        .product-name-input:focus { border-bottom-color: #e67e22; background: rgba(255,255,255,0.1); }
+
+        .product-sku { opacity: 0.8; font-size: 0.9rem; margin-top: 5px; }
 
         .card-body { padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
 
@@ -96,11 +108,28 @@
         .stock-ok { color: #27ae60; }
         .stock-low { color: #e74c3c; }
 
+        /* ÁR SZERKESZTŐ */
         .price-section { 
-            grid-column: span 2; display: flex; justify-content: space-between; 
+            grid-column: span 2; display: flex; justify-content: space-between; gap: 10px;
             background: #ecf0f1; padding: 15px; border-radius: 8px; margin-top: 5px; 
         }
-        .price-large { color: #e67e22; font-size: 1.6rem; }
+        .price-input-wrapper { text-align: center; width: 48%; }
+        
+        .price-input {
+            width: 100%;
+            padding: 10px;
+            font-size: 1.4rem;
+            font-weight: bold;
+            border: 2px solid #bdc3c7;
+            border-radius: 8px;
+            text-align: center;
+            color: #2c3e50;
+            box-sizing: border-box; 
+        }
+        .price-input:focus { border-color: #e67e22; outline: none; background: #fff; }
+        
+        .price-net { color: #7f8c8d; background-color: #e0e0e0; border-color: #d6dbdf; }
+        .price-gross { color: #e67e22; background: #fff; }
 
         /* MŰVELETI GOMBOK */
         .btn-save { 
@@ -125,7 +154,7 @@
 </head>
 <body>
 
-    <h2>SzVG Python Kereső</h2>
+    <h2>SzVG Admin Szerkesztő</h2>
     
     <div id="reader"></div>
 
@@ -142,7 +171,9 @@
 
     <div id="product-card">
         <div class="card-header">
-            <div class="product-name" id="disp-name">Termék Neve</div>
+            <div class="name-label">Termék neve</div>
+            <textarea id="input-name" class="product-name-input" rows="2">Termék Neve</textarea>
+            
             <div class="product-sku">
                 SKU: <span id="disp-sku">-</span> | Vonalkód: <span id="disp-barcode">-</span>
             </div>
@@ -160,18 +191,18 @@
             </div>
 
             <div class="price-section">
-                <div style="text-align: center;">
-                    <div class="info-label">Nettó</div>
-                    <div id="disp-netto" style="font-weight:bold; font-size:1.2rem;">0</div>
+                <div class="price-input-wrapper">
+                    <div class="info-label">Nettó ár (Fix)</div>
+                    <input type="number" id="input-netto" class="price-input price-net" placeholder="0" readonly>
                 </div>
-                <div style="text-align: center;">
-                    <div class="info-label">Bruttó</div>
-                    <div id="disp-brutto" class="info-value price-large">0</div>
+                <div class="price-input-wrapper">
+                    <div class="info-label">Bruttó ár (Szerk.)</div>
+                    <input type="number" id="input-brutto" class="price-input price-gross" placeholder="0">
                 </div>
             </div>
 
-            <button class="btn-save" onclick="saveAndNext()">💾 MENTÉS & KÖVETKEZŐ</button>
-            <button class="btn-cancel" onclick="resetScanner()">Mégse (Új beolvasás)</button>
+            <button class="btn-save" onclick="saveAndNext()">💾 MENTÉS (Név + Ár)</button>
+            <button class="btn-cancel" onclick="cancelEdit()">Mégse (Kilépés)</button>
         </div>
     </div>
 
@@ -180,7 +211,6 @@
         let isScanningPaused = false;
         let audioCtx;
 
-        // --- HANG ---
         function playBeep() {
             if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -191,12 +221,9 @@
             osc.start(); setTimeout(() => osc.stop(), 150);
         }
 
-        // --- KAMERA KEZELÉS ---
         function startScanner() {
             document.getElementById("error-msg").style.display = "none";
             isScanningPaused = false;
-            
-            // Ha már fut, állítsuk le és indítsuk újra, vagy ha nem, simán indítsuk
             if (html5QrCode) {
                 html5QrCode.stop().then(initCamera).catch(initCamera);
             } else {
@@ -206,19 +233,9 @@
 
         function initCamera() {
             html5QrCode = new Html5Qrcode("reader");
-            const config = { 
-                fps: 10, 
-                qrbox: { width: 250, height: 150 },
-                aspectRatio: 1.0 
-            };
-            
+            const config = { fps: 10, qrbox: { width: 250, height: 150 }, aspectRatio: 1.0 };
             html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess)
-            .catch(err => { 
-                console.log("Kamera hiba: ", err);
-                // Nem írunk ki hibát a felhasználónak, ha csak engedélyre vár,
-                // de ha végleges hiba van, akkor igen:
-                // showError("Kamera hiba! Próbáld meg a kézi bevitelt.");
-            });
+            .catch(err => console.log("Kamera hiba: ", err));
         }
 
         function onScanSuccess(decodedText) {
@@ -228,41 +245,32 @@
             
             isScanningPaused = true; 
             playBeep();
-            
             document.getElementById("manual-input").value = code;
             fetchProductFromAdmin(code);
         }
 
-        // --- ADAT LEKÉRÉS ---
         async function fetchProductFromAdmin(barcode) {
             const card = document.getElementById("product-card");
             const loading = document.getElementById("loading");
-            const loadText = document.getElementById("loading-text");
             const errorDiv = document.getElementById("error-msg");
             
-            // UI Reset
             card.style.display = "none";
             errorDiv.style.display = "none";
             loading.style.display = "block";
-            loadText.innerText = "Termék keresése...";
+            document.getElementById("loading-text").innerText = "Termék keresése...";
 
             try {
-                // Hívás a Python szerverhez
                 const response = await fetch(`/api/product/${barcode}`);
-                
                 if (!response.ok) {
                     const errData = await response.json();
                     throw new Error(errData.error || "Hiba a lekérdezésben");
                 }
-
                 const data = await response.json();
                 displayResult(data);
-
             } catch (err) {
                 console.error(err);
                 errorDiv.innerText = "⚠️ " + err.message;
                 errorDiv.style.display = "block";
-                // Hiba esetén engedjük az új beolvasást
                 isScanningPaused = false;
             } finally {
                 loading.style.display = "none";
@@ -270,47 +278,52 @@
         }
 
         function displayResult(data) {
-            document.getElementById("disp-name").innerText = data.name;
+            // Név betöltése a szerkeszthető mezőbe
+            document.getElementById("input-name").value = data.name;
+            
             document.getElementById("disp-sku").innerText = data.sku;
             document.getElementById("disp-barcode").innerText = data.barcode;
             
             const stockEl = document.getElementById("disp-stock");
             stockEl.innerText = data.stock;
-            
-            // Színváltás (ha készlet <= 0 akkor piros)
             let stockNum = parseFloat(data.stock.replace(',', '.').replace(/\s/g, ''));
             stockEl.className = "info-value " + (stockNum > 0 ? "stock-ok" : "stock-low");
 
             document.getElementById("disp-unit").innerText = data.unit;
-            document.getElementById("disp-netto").innerText = data.net_price + " Ft";
-            document.getElementById("disp-brutto").innerText = data.gross_price + " Ft";
+            
+            document.getElementById("input-netto").value = data.net_price;
+            document.getElementById("input-brutto").value = data.gross_price;
 
             document.getElementById("product-card").style.display = "block";
-            
-            // Kamerát szüneteltetjük, hogy spóroljunk az akkuval
             if(html5QrCode) html5QrCode.pause(); 
         }
 
-        // --- MENTÉS ÉS KILÉPÉS ---
+        // --- MENTÉS (NÉV + BRUTTÓ ÁR) ---
         async function saveAndNext() {
             const loading = document.getElementById("loading");
-            const loadText = document.getElementById("loading-text");
             
+            // Adatok kiolvasása
+            const newName = document.getElementById("input-name").value;
+            const newGross = document.getElementById("input-brutto").value;
+
             loading.style.display = "block";
-            loadText.innerText = "Mentés és kilépés...";
+            document.getElementById("loading-text").innerText = "Mentés és kilépés...";
             document.getElementById("product-card").style.display = "none";
 
             try {
-                const response = await fetch(`/api/save`, { method: 'POST' });
-                if (!response.ok) {
-                    throw new Error("Hiba a mentés során!");
-                }
-                const res = await response.json();
-                console.log(res.message);
-                
-                // Ha kész, alaphelyzet
-                resetScanner();
+                const response = await fetch(`/api/save`, { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        name: newName,       // Név küldése
+                        gross_price: newGross 
+                    })
+                });
 
+                if (!response.ok) throw new Error("Hiba a mentés során!");
+                const res = await response.json();
+                
+                resetScanner();
             } catch (err) {
                 alert("Hiba: " + err.message);
                 resetScanner();
@@ -319,38 +332,38 @@
             }
         }
 
-        // --- ALAPHELYZET (MÉGSE) ---
+        async function cancelEdit() {
+             const loading = document.getElementById("loading");
+             loading.style.display = "block";
+             document.getElementById("loading-text").innerText = "Kilépés mentés nélkül...";
+             document.getElementById("product-card").style.display = "none";
+
+             try {
+                await fetch(`/api/save`, { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'cancel' }) 
+                });
+             } catch(e) { console.log(e); }
+             
+             resetScanner();
+             loading.style.display = "none";
+        }
+
         function resetScanner() {
             document.getElementById("product-card").style.display = "none";
             document.getElementById("manual-input").value = "";
             document.getElementById("loading").style.display = "none";
-            
-            // Kamera újraindítása
-            if(html5QrCode) {
-                try {
-                    html5QrCode.resume();
-                } catch(e) {
-                    // Ha nem volt pause-olva, akkor nem kell resume
-                    console.log("Kamera már fut."); 
-                }
-            }
+            if(html5QrCode) { try { html5QrCode.resume(); } catch(e){} }
             isScanningPaused = false;
         }
 
-        // Kézi keresés gomb
         function handleManualSearch() {
             const val = document.getElementById("manual-input").value.trim();
-            if(val) {
-                isScanningPaused = true;
-                fetchProductFromAdmin(val);
-            }
+            if(val) { isScanningPaused = true; fetchProductFromAdmin(val); }
         }
-
         function checkEnter(e) { if (e.key === "Enter") handleManualSearch(); }
-
-        // Induláskor
         window.onload = startScanner;
-
     </script>
 </body>
 </html>

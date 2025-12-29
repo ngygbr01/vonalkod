@@ -1,15 +1,17 @@
 import os
 import time
+import json
 from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 from playwright.sync_api import sync_playwright
 from dotenv import load_dotenv
 
-# --- ÚTVONALAK ---
+# --- KONFIGURÁCIÓ ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 dotenv_path = os.path.join(current_dir, '.env')
+state_file_path = os.path.join(current_dir, 'state.json') # ITT TÁROLJUK A BEJELENTKEZÉST
 
-print("--- ROBOT INDÍTÁSA ---")
+print("--- ROBOT KONFIGURÁCIÓ BETÖLTÉSE ---")
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)
 else:
@@ -25,201 +27,301 @@ if not ADMIN_USER or not ADMIN_PASS:
 app = Flask(__name__, template_folder='.', static_folder='.')
 CORS(app)
 
-# Globális változók
+# --- GLOBÁLIS VÁLTOZÓK ---
 playwright_instance = None
 browser_instance = None
 context_instance = None
 page_instance = None
 
-def init_browser():
-    """Elindítja a böngészőt, ha még nem fut."""
+def init_browser_engine():
+    """Elindítja a Playwright motort és a böngészőt (csak egyszer)."""
     global playwright_instance, browser_instance, context_instance, page_instance
     
     if playwright_instance is None:
-        print("Playwright motor indítása...")
+        print("1. Playwright motor indítása...")
         playwright_instance = sync_playwright().start()
     
     if browser_instance is None or not browser_instance.is_connected():
-        print("Chromium ablak nyitása...")
+        print("2. Chromium ablak nyitása...")
         browser_instance = playwright_instance.chromium.launch(headless=False)
         
+    # KÖRNYEZET (CONTEXT) KEZELÉSE STATE.JSON-NAL
     if context_instance is None:
-        context_instance = browser_instance.new_context(viewport={'width': 1366, 'height': 768})
-        
+        print("3. Böngésző kontextus létrehozása...")
+        if os.path.exists(state_file_path):
+            try:
+                context_instance = browser_instance.new_context(
+                    viewport={'width': 1366, 'height': 768},
+                    storage_state=state_file_path # Sütik betöltése
+                )
+            except Exception as e:
+                print(f"   -> Hiba a state.json betöltésekor, tiszta indítás: {e}")
+                context_instance = browser_instance.new_context(viewport={'width': 1366, 'height': 768})
+        else:
+            print("   -> Nincs mentett munkamenet, tiszta indítás.")
+            context_instance = browser_instance.new_context(viewport={'width': 1366, 'height': 768})
+
     if page_instance is None or page_instance.is_closed():
-        print("Új lap nyitása...")
+        print("4. Új lap nyitása...")
         page_instance = context_instance.new_page()
-        
+
     return page_instance
 
-def get_active_page():
-    """Visszaadja az aktív, bejelentkezett oldalt."""
-    page = init_browser()
+def ensure_logged_in_and_on_list():
+    """Ez a függvény felelős a bejelentkezésért és a lista oldalra navigálásért."""
+    global context_instance, page_instance
+    
+    page = init_browser_engine()
+    
+    base_url = "https://szvgtoolsshop.hu/administrator/index.php?view=products_all"
+    
+    # Ha üres a lap, vagy nem az adminon vagyunk
+    if page.url == "about:blank" or "administrator" not in page.url:
+        print("Navigálás az admin felületre...")
+        page.goto(base_url, timeout=60000)
 
+    # 1. ELLENŐRZÉS: Kell-e bejelentkezni?
     try:
-        # Ha kidobott volna, vagy nem az adminon vagyunk
-        if "administrator" not in page.url:
-            print("Navigálás az adminra...")
-            page.goto("https://szvgtoolsshop.hu/administrator/", timeout=60000)
-
-        # Login ellenőrzés
-        try:
-            if page.locator("input[name='username']").is_visible(timeout=2000):
-                print("Bejelentkezés...")
-                page.fill("input[name='username']", ADMIN_USER)
-                page.fill("input[type='password']", ADMIN_PASS)
-                page.click("button:has-text('Belépés'), button[type='submit']")
-                page.wait_for_load_state('networkidle')
-        except:
-            pass 
-
-    except Exception as e:
-        print(f"Böngésző hiba, újraindítás... ({e})")
-        try: page.close()
-        except: pass
-        global page_instance
-        page_instance = None
-        return get_active_page()
-
-    return page
-
-def reset_to_list_view(page):
-    """Biztosítja, hogy a listanézeten legyünk a keresés előtt."""
-    try:
-        # Ha be vagyunk lépve egy termékbe (van Mégse gomb), lépjünk ki
-        if page.locator("button:has-text('Mégse')").is_visible(timeout=1000):
-            print("Előző termék nyitva maradt. Kilépés...")
-            page.click("button:has-text('Mégse')")
-            page.wait_for_load_state('domcontentloaded')
-        
-        # Ha nem a terméklistán vagyunk, navigáljunk oda
-        if "view=products_all" not in page.url:
-            print("Navigálás a terméklistára...")
-            page.goto("https://szvgtoolsshop.hu/administrator/index.php?view=products_all")
-            page.wait_for_load_state('domcontentloaded')
+        if page.locator("input[name='username']").is_visible(timeout=2000):
+            print("--- BEJELENTKEZÉS SZÜKSÉGES ---")
+            page.fill("input[name='username']", ADMIN_USER)
+            page.fill("input[type='password']", ADMIN_PASS)
+            page.click("button:has-text('Belépés'), button[type='submit']")
+            page.wait_for_load_state('networkidle')
+            print("Bejelentkezés kész. Állapot mentése...")
+            context_instance.storage_state(path=state_file_path)
+        else:
+            pass # Már be vagyunk jelentkezve
             
     except Exception as e:
-        print(f"Hiba a lista nézetre álláskor: {e}")
-        page.goto("https://szvgtoolsshop.hu/administrator/index.php?view=products_all")
+        print(f"Login ellenőrzés hiba: {e}")
+
+    # 2. ELLENŐRZÉS: Jó helyen vagyunk-e (Terméklista)?
+    if "view=products_all" not in page.url:
+        print("Nem a terméklistán vagyunk. Korrekció...")
+        # Először megnézzük, nem ragadtunk-e be egy termékbe (Mégse gomb)
+        if page.locator("button:has-text('Mégse')").is_visible(timeout=1000):
+             page.click("button:has-text('Mégse')")
+        else:
+             page.goto(base_url)
+        page.wait_for_load_state('domcontentloaded')
+    
+    return page
+
+
+# --- SZERVER INDULÁSAKOR LEFUTÓ LOGIN ---
+def start_browser_service():
+    print("\n========================================")
+    print(" BÖNGÉSZŐ ELŐKÉSZÍTÉSE A HÁTTÉRBEN...")
+    print("========================================")
+    try:
+        ensure_logged_in_and_on_list()
+        print(">> BÖNGÉSZŐ KÉSZEN ÁLL A LEKÉRDEZÉSEKRE! <<\n")
+    except Exception as e:
+        print(f"Hiba az indítási előkészítésnél: {e}")
 
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
-# --- 1. LÉPÉS: KERESÉS ÉS MEGNYITÁS ---
+# --- API ENDPOINTS ---
+
 @app.route('/api/product/<barcode>', methods=['GET'])
 def get_product(barcode):
+    global page_instance
     try:
-        page = get_active_page()
+        print(f"--- API Kérés: {barcode} ---")
         
-        # Biztosítjuk, hogy tiszta lappal induljunk (ha előzőleg nem mentettünk)
-        reset_to_list_view(page)
-        
-        print(f"--- Keresés: {barcode} ---")
+        # Gyors ellenőrzés
+        if page_instance is None or page_instance.is_closed():
+            page = ensure_logged_in_and_on_list()
+        else:
+            page = page_instance
+            if "administrator" not in page.url or page.locator("input[name='username']").is_visible(timeout=500):
+                 page = ensure_logged_in_and_on_list()
 
-        # Keresés
-        print("Keresőmező kitöltése...")
+        # Ha bent ragadtunk egy termékben az előző mentésnél, kilépünk
+        if page.locator("button:has-text('Mégse')").is_visible(timeout=500):
+             page.click("button:has-text('Mégse')")
+             page.wait_for_load_state('domcontentloaded')
+
+        if "view=products_all" not in page.url:
+             page.goto("https://szvgtoolsshop.hu/administrator/index.php?view=products_all")
+
+        # --- KERESÉS ---
+        print("Keresés indítása...")
         try:
             search_input = page.locator("#searchField_all")
-            search_input.wait_for(state="visible", timeout=10000)
-            search_input.fill("") 
-            search_input.type(barcode, delay=50) 
+            search_input.fill(barcode)
             page.keyboard.press("Enter")
-            time.sleep(2) # Várunk a JS frissítésre
-        except Exception as e:
-            return jsonify({"error": "Keresőmező hiba."}), 500
+            
+            time.sleep(1.5) 
+            
+            target_link = page.locator("a[href*='view=product&id=']").first
+            if not target_link.is_visible(timeout=3000):
+                 print("Nincs találat.")
+                 return jsonify({"error": "Nincs találat erre a kódra."}), 404
 
-        # Találat megnyitása
-        target_link_selector = "a[href*='view=product&id=']"
-        try:
-            if page.locator(target_link_selector).count() == 0:
-                print("Nincs találat.")
-                return jsonify({"error": "Nincs találat erre a kódra."}), 404
-                
             print("Termék megnyitása...")
             with page.expect_navigation():
-                page.click(f"{target_link_selector} >> nth=0")
-        except Exception as e:
-             return jsonify({"error": f"Hiba a megnyitásnál: {e}"}), 500
+                target_link.click()
 
-        # Adatok kinyerése
-        print("Adatok olvasása...")
-        try:
-            page.wait_for_selector("label[for='name']", timeout=10000)
-
-            name = page.locator("label[for='name'] + div").inner_text().strip()
+            # --- UNIVERZÁLIS ADATKINYERÉS (Smart Mode) ---
+            print("Adatok kinyerése...")
             
+            # 1. NÉV (Name)
+            if page.locator("input#name").count() > 0:
+                 name = page.locator("input#name").input_value()
+            elif page.locator("label[for='name'] + div").count() > 0:
+                 name = page.locator("label[for='name'] + div").inner_text().strip()
+            else:
+                 name = "Név nem azonosítható"
+            
+            # 2. CIKKSZÁM (SKU)
             sku = "-"
-            if page.locator("#sku").count() > 0:
-                sku = page.locator("#sku").input_value()
+            if page.locator("input#sku").count() > 0:
+                sku = page.locator("input#sku").input_value()
+            elif page.locator("#sku").count() > 0:
+                sku = page.locator("#sku").inner_text()
+            elif page.locator("label[for='sku'] + div").count() > 0:
+                sku = page.locator("label[for='sku'] + div").inner_text().strip()
 
+            # 3. KÉSZLET (Stock)
             stock = "0"
             if page.locator(".total_all").count() > 0:
                 stock = page.locator(".total_all").first.inner_text().strip()
             elif page.locator(".available_all").count() > 0:
                 stock = page.locator(".available_all").first.inner_text().strip()
 
-            net_price = page.locator("#netto").input_value()
-            gross_price = page.locator("#brutto").input_value()
+            # 4. ÁRAK (Netto/Brutto)
+            # A vesszőt lecseréljük pontra a megjelenítéshez
+            net_price = "0"
+            if page.locator("#netto").count() > 0:
+                raw_net = page.locator("#netto").input_value()
+                net_price = raw_net.replace(" ", "").replace(",", ".")
             
+            gross_price = "0"
+            if page.locator("#brutto").count() > 0:
+                raw_gross = page.locator("#brutto").input_value()
+                gross_price = raw_gross.replace(" ", "").replace(",", ".")
+            
+            # 5. EGYSÉG (Unit)
             unit = "db"
-            if page.locator("label[for='unit'] + div").count() > 0:
+            if page.locator("input#unit").count() > 0:
+                unit = page.locator("input#unit").input_value()
+            elif page.locator("label[for='unit'] + div").count() > 0:
                 unit = page.locator("label[for='unit'] + div").inner_text().strip()
 
+            print(f"Siker: {name} | Bruttó: {gross_price}")
+
+            return jsonify({
+                "name": name,
+                "sku": sku,
+                "stock": stock,
+                "net_price": net_price,
+                "gross_price": gross_price,
+                "unit": unit,
+                "barcode": barcode
+            })
+
         except Exception as e:
-            print(f"Hiba az adat kinyerésnél: {e}")
-            return jsonify({"error": "Nem sikerült kiolvasni az adatokat."}), 500
-
-        print(f"Siker: {name}. VÁRAKOZÁS MENTÉSRE...")
-        # ITT A KÜLÖNBSÉG: Nem lépünk ki, hanem visszaküldjük az adatot és várunk.
-
-        return jsonify({
-            "name": name,
-            "sku": sku,
-            "stock": stock,
-            "net_price": net_price,
-            "gross_price": gross_price,
-            "unit": unit,
-            "barcode": barcode
-        })
+            print(f"Keresési hiba részletei: {e}")
+            return jsonify({"error": "Hiba az adatok beolvasásakor (lehet, hogy megváltozott az oldal szerkezete)."}), 500
 
     except Exception as e:
         print(f"Szerver Hiba: {e}")
         return jsonify({"error": f"Szerver hiba: {str(e)}"}), 500
 
 
-# --- 2. LÉPÉS: MENTÉS ÉS KILÉPÉS ---
+# --- MÓDOSÍTOTT MENTÉS FÜGGVÉNY (NÉV + Fix ID + NETTÓ TÖRLÉS) ---
 @app.route('/api/save', methods=['POST'])
 def save_product():
+    global page_instance, context_instance
     try:
-        page = get_active_page()
+        if page_instance is None: return jsonify({"error": "Nincs aktív oldal"}), 500
+        data = request.json or {}
+
+        # 1. ESET: Ha a MÉGSE gombot nyomtuk (Cancel)
+        if data.get('action') == 'cancel':
+            print("Mégse gomb -> Kilépés mentés nélkül.")
+            # Megkeressük a Mégse gombot vagy linket
+            if page_instance.locator("button:has-text('Mégse'), a:has-text('Mégse')").count() > 0:
+                with page_instance.expect_navigation():
+                    page_instance.locator("button:has-text('Mégse'), a:has-text('Mégse')").first.click()
+            else:
+                # Ha nem találjuk, simán navigáljunk vissza a listára
+                page_instance.goto("https://szvgtoolsshop.hu/administrator/index.php?view=products_all")
+                
+            return jsonify({"status": "warning", "message": "Kilépve mentés nélkül."})
+
+        # 2. ESET: MENTÉS
         print("Mentés kérése érkezett...")
 
-        # Opcionális: Ha küldtél adatot (pl. új ár), itt beírhatnánk a page.fill-el.
-        # Most csak a mentés gombot nyomjuk meg.
+        # --- NÉV FRISSÍTÉSE ---
+        if 'name' in data and data['name']:
+            print(f" -> Név frissítése: {data['name']}")
+            page_instance.fill("#name", str(data['name']))
 
-        # Megkeressük a 'Mentés és bezárás' gombot
-        save_btn = page.locator("button:has-text('Mentés és bezárás'), .button-save-close")
+        # --- ÁR FRISSÍTÉSE ---
+        if 'net_price' in data and data['net_price']:
+            new_net = str(data['net_price']).replace(".", ",")
+            print(f" -> Nettó ár beírása: {new_net}")
+            page_instance.fill("#netto", new_net)
+            
+        if 'gross_price' in data and data['gross_price']:
+            new_gross = str(data['gross_price']).replace(".", ",")
+            
+            # --- ITT A LÉNYEG: Nettó mező ürítése a kerekítési hiba ellen ---
+            print(" -> Nettó ár mező ürítése a pontos számítás érdekében...")
+            page_instance.fill("#netto", "") 
+            
+            print(f" -> Bruttó ár beírása: {new_gross}")
+            page_instance.fill("#brutto", new_gross)
+
+        # FONTOS: Tabulátor, hogy a JS érzékelje a változást
+        page_instance.keyboard.press("Tab")
+        time.sleep(0.5)
+
+        # --- Mentés gomb kattintás (#save_close) ---
+        save_btn = page_instance.locator("#save_close")
         
         if save_btn.count() > 0:
-            print("Mentés gomb megnyomva.")
-            with page.expect_navigation(): # Megvárjuk amíg visszatér a listához
-                save_btn.first.click()
-            print("Sikeresen mentve és bezárva.")
-            return jsonify({"status": "success", "message": "Termék mentve!"})
+            print("Mentés és bezárás (#save_close) gomb megnyomása...")
+            save_btn.click() 
+            
+            # --- POPUP ELLENŐRZÉS (1 mp) ---
+            try:
+                popup_confirm = page_instance.locator("button.swal2-confirm")
+                popup_confirm.wait_for(state="visible", timeout=1000)
+                
+                if popup_confirm.is_visible():
+                    print("!!! POPUP ÉSZLELVE -> Megerősítés klikkelése !!!")
+                    with page_instance.expect_navigation():
+                        popup_confirm.click()
+            except:
+                # Ha timeout (nem jött popup 1 mp alatt), akkor valószínűleg már töltődik a lista
+                print("Nem jött popup (vagy már navigált).")
+                try:
+                    page_instance.wait_for_load_state('domcontentloaded', timeout=5000)
+                except:
+                    pass
+            
+            context_instance.storage_state(path=state_file_path)
+            return jsonify({"status": "success", "message": "Sikeres mentés!"})
+        
         else:
-            print("Nem találtam Mentés gombot! Kilépés Mégse gombbal.")
-            # Ha nincs mentés, legalább lépjünk ki
-            cancel_btn = page.locator("button:has-text('Mégse')")
-            if cancel_btn.count() > 0:
-                cancel_btn.first.click()
-            return jsonify({"status": "warning", "message": "Nem volt mentés gomb, csak kiléptem."})
+            print("HIBA: Nem találom a #save_close gombot!")
+            page_instance.goto("https://szvgtoolsshop.hu/administrator/index.php?view=products_all")
+            return jsonify({"status": "warning", "message": "Nem volt mentés gomb, visszaléptem."})
 
     except Exception as e:
         print(f"Mentés hiba: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    print("SZERVER FUT (Single Thread): http://localhost:5001")
+    # ELŐSZÖR ELINDÍTJUK A BÖNGÉSZŐT
+    start_browser_service()
+    
+    print("SZERVER INDÍTÁSA: http://localhost:5001")
     app.run(host='0.0.0.0', port=5001, debug=False, threaded=False)
