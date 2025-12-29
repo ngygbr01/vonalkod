@@ -108,6 +108,17 @@
         .stock-ok { color: #27ae60; }
         .stock-low { color: #e74c3c; }
 
+        /* ÚJ CSS A LEÍRÁSHOZ */
+        .desc-scroll {
+            max-height: 100px;      /* Maximum magasság */
+            overflow-y: auto;       /* Görgetősáv, ha kell */
+            font-size: 0.9rem;      /* Kisebb betűméret a szövegnek */
+            font-weight: normal;    /* Normál vastagság */
+            text-align: left;       /* Balra igazítás */
+            line-height: 1.4;
+            color: #555;
+            white-space: pre-wrap;  /* Sortörések megtartása */
+        }
         /* ÁR SZERKESZTŐ */
         .price-section { 
             grid-column: span 2; display: flex; justify-content: space-between; gap: 10px;
@@ -186,8 +197,10 @@
             </div>
             
             <div class="info-block">
-                <div class="info-label">EGYSÉG</div>
-                <div class="info-value" id="disp-unit" style="font-size:1.2rem">db</div>
+                <div class="info-label">LEÍRÁS</div>
+                <div class="desc-scroll" id="disp-desc">
+                    Betöltés...
+                </div>
             </div>
 
             <div class="price-section">
@@ -289,7 +302,9 @@
             let stockNum = parseFloat(data.stock.replace(',', '.').replace(/\s/g, ''));
             stockEl.className = "info-value " + (stockNum > 0 ? "stock-ok" : "stock-low");
 
-            document.getElementById("disp-unit").innerText = data.unit;
+            // --- ITT A VÁLTOZÁS: Egység helyett Leírás betöltése ---
+            // Unit helyett description-t várunk a szervertől
+            document.getElementById("disp-desc").innerText = data.description; 
             
             document.getElementById("input-netto").value = data.net_price;
             document.getElementById("input-brutto").value = data.gross_price;

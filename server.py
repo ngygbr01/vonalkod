@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import re
 from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 from playwright.sync_api import sync_playwright
@@ -206,22 +207,60 @@ def get_product(barcode):
                 raw_gross = page.locator("#brutto").input_value()
                 gross_price = raw_gross.replace(" ", "").replace(",", ".")
             
-            # 5. EGYSÉG (Unit)
-            unit = "db"
-            if page.locator("input#unit").count() > 0:
-                unit = page.locator("input#unit").input_value()
-            elif page.locator("label[for='unit'] + div").count() > 0:
-                unit = page.locator("label[for='unit'] + div").inner_text().strip()
+            # 5. LEÍRÁS (Description) - Fülváltással és visszalépéssel
+            description = "-"
+            try:
+                # A) FÜL VÁLTÁS: Először a Leírás fülre kattintunk
+                try:
+                    tab_locator = page.locator("label[for='leirasok']").first
+                    if tab_locator.is_visible():
+                        print(" -> Leírás fülre kattintás...")
+                        tab_locator.click()
+                        time.sleep(0.5) # Kis idő a betöltéshez
+                except Exception as tab_err:
+                    print(f" -> Nem sikerült váltani a leírásra: {tab_err}")
 
-            print(f"Siker: {name} | Bruttó: {gross_price}")
+                # B) ADATKINYERÉS: Pontosított szelektorral
+                frame_selector = "iframe[title='HTML szerkesztő, description']"
+                
+                if page.locator(frame_selector).count() > 0:
+                    description = page.frame_locator(frame_selector).locator("body").inner_text()
+                elif page.locator("#description").count() > 0:
+                    raw_html = page.locator("#description").input_value() or page.locator("#description").inner_text()
+                    description = re.sub('<[^<]+?>', '', raw_html)
+                else:
+                    description = "Nincs leírás."
 
+                if not description.strip(): description = "Üres leírás."
+
+                # C) VISSZALÉPÉS AZ ÁLTALÁNOS FÜLRE (FONTOS!)
+                # Megkeressük az "Általános" feliratú fület, hogy a Save funkció megtalálja a mezőket
+                try:
+                    # Keresünk egy label-t, amiben benne van, hogy "Általános"
+                    general_tab = page.locator("label").filter(has_text="Általános").first
+                    if general_tab.is_visible():
+                        print(" -> Visszalépés az Általános fülre...")
+                        general_tab.click()
+                        time.sleep(0.2)
+                    else:
+                        # Ha nem találjuk szöveg alapján, próbáljuk meg az első fület (általában az a default)
+                        print(" -> 'Általános' fül nem található név szerint, próbálkozás az első füllel...")
+                        page.locator(".tabLabel").first.click()
+                except Exception as back_err:
+                    print(f" -> Hiba a visszalépésnél: {back_err}")
+
+            except Exception as e:
+                print(f"Leírás kinyerési hiba: {e}")
+                description = "Hiba a leírásnál"
+
+            # ... (A return jsonify részben cseréld ki a unit-ot description-re)
             return jsonify({
                 "name": name,
                 "sku": sku,
                 "stock": stock,
                 "net_price": net_price,
                 "gross_price": gross_price,
-                "unit": unit,
+                "description": description, # ITT A VÁLTOZÁS
                 "barcode": barcode
             })
 
@@ -234,7 +273,7 @@ def get_product(barcode):
         return jsonify({"error": f"Szerver hiba: {str(e)}"}), 500
 
 
-# --- MÓDOSÍTOTT MENTÉS FÜGGVÉNY (NÉV + Fix ID + NETTÓ TÖRLÉS) ---
+# --- MÓDOSÍTOTT MENTÉS (A TE LOGIKÁDDAL: NETTÓ TÖRLÉS + BRUTTÓ GÉPELÉS) ---
 @app.route('/api/save', methods=['POST'])
 def save_product():
     global page_instance, context_instance
@@ -245,14 +284,11 @@ def save_product():
         # 1. ESET: Ha a MÉGSE gombot nyomtuk (Cancel)
         if data.get('action') == 'cancel':
             print("Mégse gomb -> Kilépés mentés nélkül.")
-            # Megkeressük a Mégse gombot vagy linket
             if page_instance.locator("button:has-text('Mégse'), a:has-text('Mégse')").count() > 0:
                 with page_instance.expect_navigation():
                     page_instance.locator("button:has-text('Mégse'), a:has-text('Mégse')").first.click()
             else:
-                # Ha nem találjuk, simán navigáljunk vissza a listára
                 page_instance.goto("https://szvgtoolsshop.hu/administrator/index.php?view=products_all")
-                
             return jsonify({"status": "warning", "message": "Kilépve mentés nélkül."})
 
         # 2. ESET: MENTÉS
@@ -261,62 +297,92 @@ def save_product():
         # --- NÉV FRISSÍTÉSE ---
         if 'name' in data and data['name']:
             print(f" -> Név frissítése: {data['name']}")
-            page_instance.fill("#name", "") # Először töröljük a mezőt
+            page_instance.fill("#name", "") 
             page_instance.fill("#name", str(data['name']))
 
-        # --- ÁR FRISSÍTÉSE ---
+        # --- ÁR FRISSÍTÉSE (MANUÁLIS BILLENTYŰZET SZIMULÁCIÓ) ---
         if 'gross_price' in data and data['gross_price']:
             new_gross = str(data['gross_price']).replace(".", ",")
-            
-            # --- ITT A LÉNYEG: Nettó mező teljes ürítése ---
-            # Ez megakadályozza a kerekítési hibát (pl. 3000 -> 2999.99)
-            print(" -> Nettó ár mező ürítése a pontos számítás érdekében...")
-            page_instance.fill("#netto", "") 
-            
-            # Bruttó mező ürítése és újraírása
-            print(f" -> Bruttó ár beírása: {new_gross}")
-            page_instance.fill("#brutto", "")
-            page_instance.fill("#brutto", new_gross)
+            print(f" -> Ár beállítása: {new_gross}")
 
-        # FONTOS: Tabulátor, hogy a JS érzékelje a változást
-        page_instance.keyboard.press("Tab")
-        time.sleep(0.5)
+            # A) NETTÓ MEZŐ MANUÁLIS TÖRLÉSE (Hogy ne zavarjon be a számításba)
+            try:
+                print(" -> Nettó mező ürítése billentyűzettel...")
+                page_instance.click("#netto")
+                
+                # Kijelölés (Ctrl+A)
+                page_instance.keyboard.down("Control")
+                page_instance.keyboard.press("A")
+                page_instance.keyboard.up("Control")
+                
+                # Törlés
+                page_instance.keyboard.press("Backspace")
+                
+                # FONTOS: Tabulátorral kilépünk a mezőből
+                page_instance.keyboard.press("Tab")
+                time.sleep(0.2) 
+
+            except Exception as e:
+                print(f"Hiba a nettó törlésénél: {e}")
+
+            # B) BRUTTÓ MEZŐ KITÖLTÉSE (Gépeléssel)
+            try:
+                print(f" -> Bruttó ár begépelése: {new_gross}")
+                
+                # Rákattintunk a bruttóra
+                page_instance.click("#brutto")
+
+                # Kijelöljük a régit (Ctrl+A -> Törlés) - Biztonság kedvéért
+                page_instance.keyboard.down("Control")
+                page_instance.keyboard.press("A")
+                page_instance.keyboard.up("Control")
+                page_instance.keyboard.press("Backspace")
+
+                # BEGÉPELJÜK AZ ÚJ ÁRAT (karakterenként)
+                # A delay=100 lassabb, de biztosabb, hogy a JS feldolgozza
+                page_instance.keyboard.type(new_gross, delay=100)
+
+                # Kilépünk a mezőből (Tab), hogy elinduljon a kalkuláció
+                page_instance.keyboard.press("Tab")
+                time.sleep(0.5)
+
+            except Exception as e:
+                print(f"Hiba a bruttó írásánál: {e}")
 
         # --- Mentés gomb kattintás (#save_close) ---
         save_btn = page_instance.locator("#save_close")
         
         if save_btn.count() > 0:
-            print("Mentés és bezárás (#save_close) gomb megnyomása...")
+            print("Mentés gomb megnyomása...")
             save_btn.click() 
             
-            # --- POPUP ELLENŐRZÉS (1 mp) ---
+            # --- POPUP ELLENŐRZÉS ---
             try:
                 popup_confirm = page_instance.locator("button.swal2-confirm")
                 popup_confirm.wait_for(state="visible", timeout=1000)
-                
                 if popup_confirm.is_visible():
-                    print("!!! POPUP ÉSZLELVE -> Megerősítés klikkelése !!!")
                     with page_instance.expect_navigation():
                         popup_confirm.click()
             except:
-                # Ha timeout (nem jött popup 1 mp alatt), akkor valószínűleg már töltődik a lista
-                print("Nem jött popup (vagy már navigált).")
-                try:
-                    page_instance.wait_for_load_state('domcontentloaded', timeout=5000)
-                except:
-                    pass
+                pass
             
+            # Várakozás a betöltésre
+            try:
+                page_instance.wait_for_load_state('domcontentloaded', timeout=3000)
+            except:
+                pass
+
             context_instance.storage_state(path=state_file_path)
             return jsonify({"status": "success", "message": "Sikeres mentés!"})
         
         else:
-            print("HIBA: Nem találom a #save_close gombot!")
-            page_instance.goto("https://szvgtoolsshop.hu/administrator/index.php?view=products_all")
-            return jsonify({"status": "warning", "message": "Nem volt mentés gomb, visszaléptem."})
+            print("HIBA: Nem találom a mentés gombot!")
+            return jsonify({"status": "warning", "message": "Nem volt mentés gomb."})
 
     except Exception as e:
         print(f"Mentés hiba: {e}")
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == '__main__':
     # ELŐSZÖR ELINDÍTJUK A BÖNGÉSZŐT
