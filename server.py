@@ -261,22 +261,21 @@ def save_product():
         # --- NÉV FRISSÍTÉSE ---
         if 'name' in data and data['name']:
             print(f" -> Név frissítése: {data['name']}")
+            page_instance.fill("#name", "") # Először töröljük a mezőt
             page_instance.fill("#name", str(data['name']))
 
         # --- ÁR FRISSÍTÉSE ---
-        if 'net_price' in data and data['net_price']:
-            new_net = str(data['net_price']).replace(".", ",")
-            print(f" -> Nettó ár beírása: {new_net}")
-            page_instance.fill("#netto", new_net)
-            
         if 'gross_price' in data and data['gross_price']:
             new_gross = str(data['gross_price']).replace(".", ",")
             
-            # --- ITT A LÉNYEG: Nettó mező ürítése a kerekítési hiba ellen ---
+            # --- ITT A LÉNYEG: Nettó mező teljes ürítése ---
+            # Ez megakadályozza a kerekítési hibát (pl. 3000 -> 2999.99)
             print(" -> Nettó ár mező ürítése a pontos számítás érdekében...")
             page_instance.fill("#netto", "") 
             
+            # Bruttó mező ürítése és újraírása
             print(f" -> Bruttó ár beírása: {new_gross}")
+            page_instance.fill("#brutto", "")
             page_instance.fill("#brutto", new_gross)
 
         # FONTOS: Tabulátor, hogy a JS érzékelje a változást
