@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 # --- KONFIGURÁCIÓ ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 state_file_path = os.path.join(current_dir, 'state.json')
-
+ 
 load_dotenv()
 ADMIN_USER = os.getenv("ADMIN_USERNAME")
 ADMIN_PASS = os.getenv("ADMIN_PASSWORD")
