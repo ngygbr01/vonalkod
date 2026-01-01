@@ -219,10 +219,13 @@
         </div>
     </div>
 
-    <script>
+<script>
         let html5QrCode;
         let isScanningPaused = false;
         let audioCtx;
+        
+        // ÚJ: Itt tároljuk az aktuális vonalkódot, hogy mentéskor visszaküldhessük
+        let currentBarcode = null; 
 
         function playBeep() {
             if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -263,6 +266,9 @@
         }
 
         async function fetchProductFromAdmin(barcode) {
+            // ÚJ: Elmentjük a vonalkódot a globális változóba
+            currentBarcode = barcode;
+
             const card = document.getElementById("product-card");
             const loading = document.getElementById("loading");
             const errorDiv = document.getElementById("error-msg");
@@ -302,8 +308,7 @@
             let stockNum = parseFloat(data.stock.replace(',', '.').replace(/\s/g, ''));
             stockEl.className = "info-value " + (stockNum > 0 ? "stock-ok" : "stock-low");
 
-            // --- ITT A VÁLTOZÁS: Egység helyett Leírás betöltése ---
-            // Unit helyett description-t várunk a szervertől
+            // Leírás betöltése
             document.getElementById("disp-desc").innerText = data.description; 
             
             document.getElementById("input-netto").value = data.net_price;
@@ -313,8 +318,14 @@
             if(html5QrCode) html5QrCode.pause(); 
         }
 
-        // --- MENTÉS (NÉV + BRUTTÓ ÁR) ---
+        // --- MENTÉS (NÉV + BRUTTÓ ÁR + VONALKÓD) ---
         async function saveAndNext() {
+            // Biztonsági ellenőrzés
+            if (!currentBarcode) {
+                alert("Hiba: Nincs kiválasztva termék (hiányzó vonalkód)!");
+                return;
+            }
+
             const loading = document.getElementById("loading");
             
             // Adatok kiolvasása
@@ -330,14 +341,21 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
-                        name: newName,       // Név küldése
+                        barcode: currentBarcode, // ÚJ: Visszaküldjük a vonalkódot!
+                        name: newName,       
                         gross_price: newGross 
                     })
                 });
 
-                if (!response.ok) throw new Error("Hiba a mentés során!");
+                // JSON válasz feldolgozása a hibaüzenethez
                 const res = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(res.error || res.message || "Hiba a mentés során!");
+                }
                 
+                // Ha sikerült
+                // alert("Siker: " + res.message); // Opcionális visszajelzés
                 resetScanner();
             } catch (err) {
                 alert("Hiba: " + err.message);
@@ -348,27 +366,15 @@
         }
 
         async function cancelEdit() {
-             const loading = document.getElementById("loading");
-             loading.style.display = "block";
-             document.getElementById("loading-text").innerText = "Kilépés mentés nélkül...";
-             document.getElementById("product-card").style.display = "none";
-
-             try {
-                await fetch(`/api/save`, { 
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'cancel' }) 
-                });
-             } catch(e) { console.log(e); }
-             
+             console.log("Mégse gomb: Helyi visszaállítás...");
              resetScanner();
-             loading.style.display = "none";
         }
 
         function resetScanner() {
             document.getElementById("product-card").style.display = "none";
             document.getElementById("manual-input").value = "";
             document.getElementById("loading").style.display = "none";
+            currentBarcode = null; // Töröljük a memóriából
             if(html5QrCode) { try { html5QrCode.resume(); } catch(e){} }
             isScanningPaused = false;
         }
